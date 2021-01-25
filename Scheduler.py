@@ -8,6 +8,7 @@ from termcolor import colored
 resource_mutex = Semaphore()
 task_mutex = Semaphore()
 
+
 class Task:
     def __init__(self, name, type, duration, priority=None):
         self.name = name
@@ -24,34 +25,49 @@ class Task:
         self.state = state
         task_mutex.release()
 
-
     def get_state(self):
         task_mutex.acquire(blocking=False)
         state = self.state
         task_mutex.release()
         return state
 
+    def set_isAssigned(self, isAssigned):
+        task_mutex.acquire(blocking=False)
+        self.isAssigned = isAssigned
+        task_mutex.release()
+
+    def get_isAssigned(self):
+        task_mutex.acquire(blocking=False)
+        isAssigned = self.isAssigned
+        task_mutex.release()
+        return isAssigned
+
+    def get_required_resources(self):
+        if self.type == 'X':
+            return ('A', 'B')
+        elif self.type == 'Y':
+            return ('B', 'C')
+        elif self.type == 'Z':
+            return ('A', 'C')
+
+    def get_cpu_time(self):
+        resource_mutex.acquire(blocking=False)
+        cpu_time = self.cpu_time
+        resource_mutex.release()
+        return cpu_time
 
     def allocate_resources(self, resources):
         resource_mutex.acquire(blocking=False)
-        for res in self.required_resources:
+        for res in self.get_required_resources():
             resources[res] -= 1
         resource_mutex.release()
 
-
     def free_resources(self, resources):
         resource_mutex.acquire(blocking=False)
-        for res in self.required_resources:
+        for res in self.get_required_resources():
             resources[res] += 1
         resource_mutex.release()
 
-    def get_required_resources(self):
-        if type == 'X':
-            return ['A', 'B']
-        elif type == 'Y':
-            return ['B', 'C']
-        elif type == 'Z':
-            return ['A', 'C']
 
 
 
@@ -65,18 +81,15 @@ class CPUCore:
         self.state = 'idle'
         self.running_task = None
 
-
     def set_running_task(self, task):
         cpu_core_mutex.acquire(blocking=False)
         self.running_task = task
         cpu_core_mutex.release()
 
-
     def set_state(self, state):
         cpu_core_mutex.acquire(blocking=False)
         self.state = state
         cpu_core_mutex.release()
-
 
     def get_state(self):
         cpu_core_mutex.acquire(blocking=False)
@@ -84,21 +97,17 @@ class CPUCore:
         cpu_core_mutex.release()
         return state
 
-
-    def process_task(self, task, resources, cpu_cores, **kwargs):
-        time_quantum = kwargs.get('time_quantum')
-        ready = kwargs.get('ready')
-
+    def process_task(self, task, resources, cpu_cores, time_quantum=None):
         self.set_state('busy')
         self.set_running_task(task)
 
         task.set_state('running')
         task.allocate_resources(resources)
 
-        if time_quantum != None:
+        if time_quantum == None:
             for _ in range(task.duration):
                 time.sleep(1)
-                print_system_status(cpu_cores, resources)
+                # print_system_status(cpu_cores, resources)
                 task.cpu_time += 1
                 self.idle_time += 1
 
@@ -109,21 +118,25 @@ class CPUCore:
             remain_time = task.duration - task.cpu_time
             for _ in range(min(remain_time, time_quantum)):
                 time.sleep(1)
-                print_system_status(cpu_cores, resources)
+                # print_system_status(cpu_cores, resources)
                 task.cpu_time += 1
                 self.idle_time += 1
 
             task.free_resources(resources)
             if task.cpu_time == task.duration:
+                print('Task ' + task.name + ' done!')
                 task.set_state('done')
+
             else:
                 task.set_state('ready')
-                if ready != None:
+                task.set_isAssigned(False)
+                # if ready_list != None:
+                with task_mutex:
                     ready.append(task)
 
+        print(colored('Task ' + task.name + ' current cputime: ', 'yellow')+ str(task.get_cpu_time()))
         self.set_state('idle')
         self.set_running_task(None)
-
 
 
 
@@ -136,12 +149,16 @@ def hasEnoughResources(task, resources):
 
 
 def print_cpu_cores_consumed_time(cpu_cores):
+    print()
     print(colored('.: CPU Cores Status :.', 'yellow', attrs=('bold', )))
     for core in cpu_cores:
-        print(colored(core.name + ': ', 'yellow') + str(core.idle_time) + 'secs!')
+        print(colored(core.name + ': ', 'yellow') + str(core.idle_time) + ' secs!')
+
+    print()
 
 
 def print_system_status(cpu_cores, resources):
+    print()
     print(colored('.: System Status :.', 'yellow', attrs=('bold', )))
     cpu_core_mutex.acquire(blocking=False)
     for core in cpu_cores:
@@ -163,14 +180,14 @@ def FCFS(ready, cpu_cores, resources):
     threads = []
     while len(ready) > 0:
         task = ready[0]
-        while(not task.isAssigned):
+        while(not task.get_isAssigned()):
             if hasEnoughResources(task, resources):
                 for core in cpu_cores:
                     if core.get_state() == 'idle':
                         th = Thread(target=core.process_task, args=(task, resources, cpu_cores))
                         th.start()
                         threads.append(th)
-                        task.isAssigned = True
+                        task.set_isAssigned(True)
                         ready.pop(0)
                         break
 
@@ -189,16 +206,49 @@ def SJF(ready, cpu_cores, resources):
     ready = sorted(ready, key=lambda item: item.duration)
     while len(ready) > 0:
         task = ready[0]
-        while(not task.isAssigned):
+        while(not task.get_isAssigned()):
             if hasEnoughResources(task, resources):
                 for core in cpu_cores:
                     if core.get_state() == 'idle':
                         th = Thread(target=core.process_task, args=(task, resources, cpu_cores))
                         th.start()
                         threads.append(th)
-                        task.isAssigned = True
+                        task.set_isAssigned(True)
                         ready.pop(0)
                         break
+
+    for th in threads:
+        if th.is_alive():
+            th.join()
+
+    print_cpu_cores_consumed_time(cpu_cores)
+
+
+
+def get_done_tasks_count(tasks):
+    done_tasks_count = 0
+    for task in tasks:
+        if task.get_state() == 'done':
+            done_tasks_count += 1
+    return done_tasks_count
+
+def RoundRobin(ready, cpu_cores, resources, time_quantum):
+    threads = []
+    tasks = ready.copy()
+
+    while get_done_tasks_count(tasks) < tasks_count:
+        if len(ready) > 0:
+            task = ready[0]
+            while(not task.get_isAssigned()):
+                if hasEnoughResources(task, resources):
+                    for core in cpu_cores:
+                        if core.get_state() == 'idle':
+                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores, time_quantum))
+                            task.set_isAssigned(True)
+                            ready.pop(0)
+                            th.start()
+                            threads.append(th)
+                            break
 
     for th in threads:
         if th.is_alive():
@@ -223,7 +273,7 @@ resources['C'] = int(input(colored('    C > ', 'yellow')))
 tasks_count = int(input(colored('How many tasks do exist? ', 'yellow', attrs=('bold', ))))
 
 for _ in range(tasks_count):
-    task_info = input(colored('    > ', 'yellow'))
+    task_info = input(colored('    > ', 'yellow')).split()
     task_name = task_info[0]
     task_type = task_info[1]
     task_duration = int(task_info[2])
@@ -232,18 +282,21 @@ for _ in range(tasks_count):
     ready.append(task)
 
 
-for i in range(6):
+for i in range(2):
     cpu_cores.append(CPUCore('core {}'.format(i+1)))
 
 
 
 # fcfs_thread = Thread(target=fcfs, args=(ready, cpu_cores, resources))
 # fcfs_thread.start()
-# # print_system_status, args=(cpu_cores, resources)
 # fcfs_thread.join()
 
-sjf_thread = Thread(target=SJF, args=(ready, cpu_cores, resources))
-sjf_thread.start()
+# sjf_thread = Thread(target=SJF, args=(ready, cpu_cores, resources))
+# sjf_thread.start()
+# sjf_thread.join()
 
-sjf_thread.join()
+rr_thread = Thread(target=RoundRobin, args=(ready, cpu_cores, resources, 2))
+rr_thread.start()
+rr_thread.join()
+
 sys.exit()
