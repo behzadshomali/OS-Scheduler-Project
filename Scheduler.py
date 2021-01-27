@@ -178,6 +178,12 @@ def print_system_status(cpu_cores, resources):
     resource_mutex.release()
 
 
+def join_threads(threads):
+    for th in threads:
+        if th.is_alive():
+            th.join()
+
+
 def FCFS():
     threads = []
     while len(ready) > 0 or len(waiting) > 0:
@@ -208,9 +214,7 @@ def FCFS():
             waiting.append(task)
 
 
-    for th in threads:
-        if th.is_alive():
-            th.join()
+    join_threads(threads)
 
     print_cpu_cores_consumed_time(cpu_cores)
 
@@ -249,9 +253,7 @@ def SJF():
             waiting.append(task)
 
 
-    for th in threads:
-        if th.is_alive():
-            th.join()
+    join_threads(threads)
 
     print_cpu_cores_consumed_time(cpu_cores)
 
@@ -264,23 +266,39 @@ def get_done_tasks_count(tasks):
             done_tasks_count += 1
     return done_tasks_count
 
-def RoundRobin(ready, cpu_cores, resources, time_quantum):
+def RoundRobin(time_quantum):
     threads = []
     tasks = ready.copy()
 
     while get_done_tasks_count(tasks) < tasks_count:
-        if len(ready) > 0:
+        isDone = True
+        if len(waiting) > 0:
+            task = waiting[0]
+            isDone = False
+        elif len(ready) > 0:
             task = ready[0]
-            while(not task.get_isAssigned()):
-                if hasEnoughResources(task, resources):
+            isDone = False
+
+        if not isDone:
+            if hasEnoughResources(task, resources):
+                while(not task.get_isAssigned()):
                     for core in cpu_cores:
                         if core.get_state() == 'idle':
                             th = Thread(target=core.process_task, args=(task, resources, cpu_cores, time_quantum))
                             task.set_isAssigned(True)
-                            ready.pop(0)
+                            if task in ready:
+                                ready.pop(0)
+                            else:
+                                waiting.pop(0)
                             th.start()
                             threads.append(th)
                             break
+            else:
+                if task in ready:
+                    ready.pop(0)
+                else:
+                    waiting.pop(0)
+                waiting.append(task)
 
     for th in threads:
         if th.is_alive():
@@ -314,7 +332,7 @@ for _ in range(tasks_count):
     ready.append(task)
 
 
-for i in range(2):
+for i in range(4):
     cpu_cores.append(CPUCore('core {}'.format(i+1)))
 
 
@@ -323,12 +341,13 @@ for i in range(2):
 # fcfs_thread.start()
 # fcfs_thread.join()
 
-sjf_thread = Thread(target=SJF)
-sjf_thread.start()
-sjf_thread.join()
+# sjf_thread = Thread(target=SJF)
+# sjf_thread.start()
+# sjf_thread.join()
 
-# rr_thread = Thread(target=RoundRobin, args=(ready, cpu_cores, resources, 2))
-# rr_thread.start()
-# rr_thread.join()
+time_quantum = 2
+rr_thread = Thread(target=RoundRobin, args=(time_quantum, ))
+rr_thread.start()
+rr_thread.join()
 
 sys.exit()
