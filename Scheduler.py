@@ -5,8 +5,10 @@ import sys
 from termcolor import colored
 
 
+# Define Semaphore locks
 resource_mutex = Semaphore()
 task_mutex = Semaphore()
+cpu_core_mutex = Semaphore()
 
 
 class Task:
@@ -72,7 +74,7 @@ class Task:
 
 
 
-cpu_core_mutex = Semaphore()
+
 
 class CPUCore:
     def __init__(self, name):
@@ -130,10 +132,10 @@ class CPUCore:
             else:
                 task.set_state('ready')
                 task.set_isAssigned(False)
-                # if ready_list != None:
                 with task_mutex:
                     ready.append(task)
 
+        print()
         print(colored('Task ' + task.name + ' current cputime: ', 'yellow')+ str(task.get_cpu_time()))
         self.set_state('idle')
         self.set_running_task(None)
@@ -176,20 +178,34 @@ def print_system_status(cpu_cores, resources):
     resource_mutex.release()
 
 
-def FCFS(ready, cpu_cores, resources):
+def FCFS():
     threads = []
-    while len(ready) > 0:
-        task = ready[0]
-        while(not task.get_isAssigned()):
-            if hasEnoughResources(task, resources):
+    while len(ready) > 0 or len(waiting) > 0:
+
+        if len(waiting) > 0:
+            task = waiting[0]
+        else:
+            task = ready[0]
+
+        if hasEnoughResources(task, resources):
+            while(not task.get_isAssigned()):
                 for core in cpu_cores:
                     if core.get_state() == 'idle':
                         th = Thread(target=core.process_task, args=(task, resources, cpu_cores))
                         th.start()
                         threads.append(th)
                         task.set_isAssigned(True)
-                        ready.pop(0)
+                        if task in ready:
+                            ready.pop(0)
+                        else:
+                            waiting.pop(0)
                         break
+        else:
+            if task in ready:
+                ready.pop(0)
+            else:
+                waiting.pop(0)
+            waiting.append(task)
 
 
     for th in threads:
@@ -287,16 +303,16 @@ for i in range(2):
 
 
 
-# fcfs_thread = Thread(target=fcfs, args=(ready, cpu_cores, resources))
-# fcfs_thread.start()
-# fcfs_thread.join()
+fcfs_thread = Thread(target=FCFS)
+fcfs_thread.start()
+fcfs_thread.join()
 
 # sjf_thread = Thread(target=SJF, args=(ready, cpu_cores, resources))
 # sjf_thread.start()
 # sjf_thread.join()
 
-rr_thread = Thread(target=RoundRobin, args=(ready, cpu_cores, resources, 2))
-rr_thread.start()
-rr_thread.join()
+# rr_thread = Thread(target=RoundRobin, args=(ready, cpu_cores, resources, 2))
+# rr_thread.start()
+# rr_thread.join()
 
 sys.exit()
