@@ -99,7 +99,7 @@ class CPUCore:
         cpu_core_mutex.release()
         return state
 
-    def process_task(self, task, resources, cpu_cores, time_quantum=None):
+    def process_task(self, task, resources, cpu_cores, time_quantum=None, queue=None, state='ready'):
         self.set_state('busy')
         self.set_running_task(task)
 
@@ -126,17 +126,17 @@ class CPUCore:
 
             task.free_resources(resources)
             if task.cpu_time == task.duration:
-                print('Task ' + task.name + ' done!')
                 task.set_state('done')
 
             else:
-                task.set_state('ready')
+                task.set_state(state)
                 task.set_isAssigned(False)
                 with task_mutex:
-                    ready.append(task)
+                    queue.append(task)
 
         print()
-        print(colored('Task ' + task.name + ' current cputime: ', 'yellow')+ str(task.get_cpu_time()))
+        print(colored('Task ' + task.name + ' current cputime: ', 'yellow')+ str(task.get_cpu_time()) \
+            + '\n' + colored('Task ' + task.name + ' current state: ' , 'yellow')+ task.get_state())
         self.set_state('idle')
         self.set_running_task(None)
 
@@ -182,6 +182,14 @@ def join_threads(threads):
     for th in threads:
         if th.is_alive():
             th.join()
+
+
+def get_done_tasks_count(tasks):
+    done_tasks_count = 0
+    for task in tasks:
+        if task.get_state() == 'done':
+            done_tasks_count += 1
+    return done_tasks_count
 
 
 def FCFS():
@@ -259,12 +267,6 @@ def SJF():
 
 
 
-def get_done_tasks_count(tasks):
-    done_tasks_count = 0
-    for task in tasks:
-        if task.get_state() == 'done':
-            done_tasks_count += 1
-    return done_tasks_count
 
 def RoundRobin(time_quantum):
     threads = []
@@ -284,7 +286,7 @@ def RoundRobin(time_quantum):
                 while(not task.get_isAssigned()):
                     for core in cpu_cores:
                         if core.get_state() == 'idle':
-                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores, time_quantum))
+                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores, time_quantum, ready))
                             task.set_isAssigned(True)
                             if task in ready:
                                 ready.pop(0)
@@ -300,11 +302,72 @@ def RoundRobin(time_quantum):
                     waiting.pop(0)
                 waiting.append(task)
 
-    for th in threads:
-        if th.is_alive():
-            th.join()
+    join_threads(threads)
 
     print_cpu_cores_consumed_time(cpu_cores)
+
+
+
+
+def multilevel_feedback_queue(queues_number, queues_time_quantum):
+    queues = {}
+    for i in range(queues_number):
+        queues[i] = []
+    queues[0] = ready
+    queue_index = 0
+    threads = []
+    tasks = ready.copy()
+    counter = 0
+    while get_done_tasks_count(tasks) < tasks_count:
+        isDone = True
+        if len(waiting) > 0:
+            task, queue_index = waiting[0]
+            isDone = False
+        else:
+            for i in range(queues_number, 0, -1):
+                if counter % (queues_number * i) == 0 and len(queues[i-1]) > 0:
+                    task = queues[i-1][0]
+                    queue_index = i-1
+                    isDone = False
+                    break
+        counter += 1
+        if not isDone:
+            if hasEnoughResources(task, resources):
+                while(not task.get_isAssigned()):
+                    for core in cpu_cores:
+                        if core.get_state() == 'idle':
+                            next_level_queue_indx = min(queue_index+1, queues_number-1)
+                            next_state = 'queue ' + str(next_level_queue_indx)
+                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores, \
+                                queues_time_quantum[queue_index], queues[next_level_queue_indx], next_state))
+                            task.set_isAssigned(True)
+
+                            isWaiting = True
+                            for i in range(queues_number):
+                                if task in queues[i]:
+                                    queues[i].pop(0)
+                                    isWaiting = False
+                            if isWaiting:
+                                waiting.pop(0)
+                            th.start()
+                            threads.append(th)
+                            break
+            else:
+                isWaiting = True
+                for i in range(queues_number):
+                    if task in queues[i]:
+                        queues[i].pop(0)
+                        isWaiting = False
+                if isWaiting:
+                    waiting.pop(0)
+
+                waiting.append((task, queue_index))
+
+
+    join_threads(threads)
+
+    print_cpu_cores_consumed_time(cpu_cores)
+
 
 
 
@@ -345,9 +408,13 @@ for i in range(4):
 # sjf_thread.start()
 # sjf_thread.join()
 
-time_quantum = 2
-rr_thread = Thread(target=RoundRobin, args=(time_quantum, ))
-rr_thread.start()
-rr_thread.join()
+# time_quantum = 2
+# rr_thread = Thread(target=RoundRobin, args=(time_quantum, ))
+# rr_thread.start()
+# rr_thread.join()
+
+mlf_thread = Thread(target=multilevel_feedback_queue, args=(3, [2,4,10]))
+mlf_thread.start()
+mlf_thread.join()
 
 sys.exit()
