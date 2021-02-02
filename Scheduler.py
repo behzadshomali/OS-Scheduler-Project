@@ -9,18 +9,38 @@ from termcolor import colored
 resource_mutex = Semaphore()
 task_mutex = Semaphore()
 cpu_core_mutex = Semaphore()
+system_total_time_mutex = Semaphore()
 
 
 class Task:
-    def __init__(self, name, type, duration, priority=None):
+    def __init__(self, name, type, duration):
         self.name = name
         self.type = type
         self.duration = duration
-        self.priority = priority
-        self.state = 'ready'
+        self.set_state('ready')
         self.cpu_time = 0
-        self.isAssigned = False
+        self.set_isAssigned(isAssigned=False)
+        self.set_priority()
 
+
+    def set_priority(self, priority=None):
+        task_mutex.acquire(blocking=False)
+        if priority == None:
+            if self.type == 'Z':
+                self.priority = 1
+            elif self.type == 'Y':
+                self.priority = 2
+            elif self.type == 'X':
+                self.priority = 3
+        else:
+            self.priority = priority
+        task_mutex.release()
+
+    def get_priority(self):
+        task_mutex.acquire(blocking=False)
+        priority = self.priority
+        task_mutex.release()
+        return priority
 
     def set_state(self, state):
         task_mutex.acquire(blocking=False)
@@ -52,11 +72,16 @@ class Task:
         elif self.type == 'Z':
             return ('A', 'C')
 
-    def get_cpu_time(self):
+
+    def increment_cpu_time(self):
         resource_mutex.acquire(blocking=False)
-        cpu_time = self.cpu_time
+        self.cpu_time += 1
         resource_mutex.release()
-        return cpu_time
+
+
+    def get_cpu_time(self):
+        return self.cpu_time
+
 
     def allocate_resources(self, resources):
         resource_mutex.acquire(blocking=False)
@@ -69,10 +94,6 @@ class Task:
         for res in self.get_required_resources():
             resources[res] += 1
         resource_mutex.release()
-
-
-
-
 
 
 
@@ -110,8 +131,9 @@ class CPUCore:
             for _ in range(task.duration):
                 time.sleep(1)
                 # print_system_status(cpu_cores, resources)
-                task.cpu_time += 1
+                task.increment_cpu_time()
                 self.idle_time += 1
+                increment_system_total_time()
 
             task.set_state('done')
             task.free_resources(resources)
@@ -121,8 +143,9 @@ class CPUCore:
             for _ in range(min(remain_time, time_quantum)):
                 time.sleep(1)
                 # print_system_status(cpu_cores, resources)
-                task.cpu_time += 1
+                task.increment_cpu_time()
                 self.idle_time += 1
+                increment_system_total_time()
 
             task.free_resources(resources)
             if task.cpu_time == task.duration:
@@ -156,6 +179,7 @@ def print_cpu_cores_consumed_time(cpu_cores):
     for core in cpu_cores:
         print(colored(core.name + ': ', 'yellow') + str(core.idle_time) + ' secs!')
 
+    print(colored('Total CPU time: ', 'yellow') + str(get_system_total_time()) + ' secs!')
     print()
 
 
@@ -192,7 +216,22 @@ def get_done_tasks_count(tasks):
     return done_tasks_count
 
 
+def increment_system_total_time():
+    global system_total_time
+    system_total_time_mutex.acquire(blocking=False)
+    system_total_time += 1
+    system_total_time_mutex.release()
+
+
+def get_system_total_time():
+    system_total_time_mutex.acquire(blocking=False)
+    time = system_total_time
+    system_total_time_mutex.release()
+    return system_total_time
+
 def FCFS():
+    global ready
+    global waiting
     threads = []
     while len(ready) > 0 or len(waiting) > 0:
 
@@ -225,6 +264,7 @@ def FCFS():
     join_threads(threads)
 
     print_cpu_cores_consumed_time(cpu_cores)
+    exit(0)
 
 
 
@@ -264,6 +304,7 @@ def SJF():
     join_threads(threads)
 
     print_cpu_cores_consumed_time(cpu_cores)
+    exit(0)
 
 
 
@@ -305,14 +346,15 @@ def RoundRobin(time_quantum):
     join_threads(threads)
 
     print_cpu_cores_consumed_time(cpu_cores)
+    exit(0)
 
 
 
 
 def multilevel_feedback_queue(queues_number, queues_time_quantum):
-    queues = {}
+    queues = []
     for i in range(queues_number):
-        queues[i] = []
+        queues.append([])
     queues[0] = ready
     queue_index = 0
     threads = []
@@ -370,11 +412,98 @@ def multilevel_feedback_queue(queues_number, queues_time_quantum):
 
 
 
+def aging(queues):
+    while len(queues[1])+len(queues[2]) > 0:
+        with system_total_time_mutex:
+            if (get_system_total_time()+1) % 15 == 0:
+                with task_mutex:
+                    while len(queues[2]) > 0:
+                        task = queues[2].pop(0)
+                        print('\n'+colored('Task ' + task.name + ' has been moved from queue_2 to queue_1!', 'yellow'))
+                        task.set_priority(task.get_priority()-1)
+                        queues[1].append(task)
+        with system_total_time_mutex:
+            if (get_system_total_time()+1) % 20 == 0:
+                with task_mutex:
+                    while len(queues[1]) > 0:
+                        task = queues[1].pop(0)
+                        print('\n'+colored('Task ' + task.name + ' has been moved from queue_1 to queue_0!', 'yellow'))
+                        task.set_priority(task.get_priority()-1)
+                        queues[0].append(task)
+
+
+def seprate_tasks_by_priority(tasks):
+    queues = []
+    for i in range(3):
+        queues.append([])
+
+    for task in tasks:
+        priority = task.get_priority()
+        queues[priority-1].append(task)
+
+    return queues
+
+
+def multilevel_queue(): # TODO: Add aging to prevent starvation
+    queues = seprate_tasks_by_priority(ready)
+    queue_index = 0
+    threads = []
+    tasks = ready.copy()
+
+    Thread(target=aging, args=(queues,)).start()
+
+    while get_done_tasks_count(tasks) < tasks_count:
+
+        isDone = True
+        is_waiting = True
+        if len(waiting) > 0:
+            task = waiting[0]
+            isDone = False
+        else:
+            for i in range(3):
+                if len(queues[i]) > 0:
+                    task = queues[i][0]
+                    is_waiting = False
+                    isDone = False
+                    break
+
+        if not isDone:
+            if hasEnoughResources(task, resources):
+                while(not task.get_isAssigned()):
+                    for core in cpu_cores:
+                        if core.get_state() == 'idle':
+                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores))
+                            task.set_isAssigned(True)
+                            with task_mutex:
+                                if not is_waiting:
+                                    for queue in queues:
+                                        if task in queue:
+                                            queue.pop(0)
+                                            break
+                                else:
+                                    waiting.pop(0)
+                            th.start()
+                            threads.append(th)
+                            break
+            else:
+                with task_mutex:
+                    if queue_index != -1:
+                        queues[queue_index].pop(0)
+                    else:
+                        waiting.pop(0)
+
+                    waiting.append(task)
+
+
+    join_threads(threads)
+    print_cpu_cores_consumed_time(cpu_cores)
+
 
 
 ready = []
 waiting = []
 cpu_cores = []
+system_total_time = 0
 resources = {}
 tasks = []
 
@@ -395,7 +524,7 @@ for _ in range(tasks_count):
     ready.append(task)
 
 
-for i in range(4):
+for i in range(1):
     cpu_cores.append(CPUCore('core {}'.format(i+1)))
 
 
@@ -416,5 +545,9 @@ for i in range(4):
 mlf_thread = Thread(target=multilevel_feedback_queue, args=(3, [2,4,10]))
 mlf_thread.start()
 mlf_thread.join()
+
+# mlq_thread = Thread(target=multilevel_queue)
+# mlq_thread.start()
+# mlq_thread.join()
 
 sys.exit()
