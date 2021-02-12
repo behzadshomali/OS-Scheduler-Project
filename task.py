@@ -1,9 +1,7 @@
-from parameters import task_mutex
-from parameters import resource_mutex
+import globals
 
 class Task:
     def __init__(self, name, type, duration):
-
         self.name = name
         self.type = type
         self.duration = duration
@@ -12,9 +10,12 @@ class Task:
         self.set_isAssigned(isAssigned=False)
         self.set_priority()
 
-
+    # set priority based on the type of the task:
+    # Z: high priority(1)
+    # Y: medium priority(2)
+    # X: low priority(3)
     def set_priority(self, priority=None):
-        task_mutex.acquire(blocking=False)
+        globals.task_mutex.acquire(blocking=False)
         if priority == None:
             if self.type == 'Z':
                 self.priority = 1
@@ -24,36 +25,41 @@ class Task:
                 self.priority = 3
         else:
             self.priority = priority
-        task_mutex.release()
+        globals.task_mutex.release()
 
     def get_priority(self):
-        task_mutex.acquire(blocking=False)
+        globals.task_mutex.acquire(blocking=False)
         priority = self.priority
-        task_mutex.release()
+        globals.task_mutex.release()
         return priority
 
     def set_state(self, state):
-        task_mutex.acquire(blocking=False)
+        globals.task_mutex.acquire(blocking=False)
         self.state = state
-        task_mutex.release()
+        globals.task_mutex.release()
 
     def get_state(self):
-        task_mutex.acquire(blocking=False)
+        globals.task_mutex.acquire(blocking=False)
         state = self.state
-        task_mutex.release()
+        globals.task_mutex.release()
         return state
 
     def set_isAssigned(self, isAssigned):
-        task_mutex.acquire(blocking=False)
+        globals.task_mutex.acquire(blocking=False)
         self.isAssigned = isAssigned
-        task_mutex.release()
+        globals.task_mutex.release()
 
     def get_isAssigned(self):
-        task_mutex.acquire(blocking=False)
+        globals.task_mutex.acquire(blocking=False)
         isAssigned = self.isAssigned
-        task_mutex.release()
+        globals.task_mutex.release()
         return isAssigned
 
+    # each type of task needs its associated
+    # resources as follows:
+    # X -> A,B
+    # Y -> B,C
+    # C -> A,C
     def get_required_resources(self):
         if self.type == 'X':
             return ('A', 'B')
@@ -64,25 +70,24 @@ class Task:
 
 
     def increment_cpu_time(self):
-        resource_mutex.acquire(blocking=False)
+        globals.resource_mutex.acquire(blocking=False)
         self.cpu_time += 1
-        resource_mutex.release()
-
+        globals.resource_mutex.release()
 
     def get_cpu_time(self):
-        resource_mutex.acquire(blocking=False)
+        globals.resource_mutex.acquire(blocking=False)
         cpu_time = self.cpu_time
-        resource_mutex.release()
+        globals.resource_mutex.release()
         return cpu_time
 
     def allocate_resources(self, resources):
-        resource_mutex.acquire(blocking=False)
+        globals.resource_mutex.acquire(blocking=False)
         for res in self.get_required_resources():
             resources[res] -= 1
-        resource_mutex.release()
+        globals.resource_mutex.release()
 
     def free_resources(self, resources):
-        resource_mutex.acquire(blocking=False)
+        globals.resource_mutex.acquire(blocking=False)
         for res in self.get_required_resources():
             resources[res] += 1
-        resource_mutex.release()
+        globals.resource_mutex.release()

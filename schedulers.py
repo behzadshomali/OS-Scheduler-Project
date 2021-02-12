@@ -1,13 +1,11 @@
 from termcolor import colored
 from threading import Thread
-from parameters import ready, waiting \
-    ,resources , cpu_cores, join_threads \
-    ,get_done_tasks_count, system_total_time_mutex \
-    ,task_mutex, print_cpu_cores_consumed_time \
-    ,tasks_count, system_total_time
+import globals
 
 
 
+# check whether there are enough resources
+# for intended task or not
 def hasEnoughResources(task, resources):
     isEnough = 1
     for res in task.get_required_resources():
@@ -16,199 +14,25 @@ def hasEnoughResources(task, resources):
     return isEnough > 0
 
 
-def FCFS():
-    global ready
-    global waiting
-    threads = []
-    while len(ready) > 0 or len(waiting) > 0:
-
-        if len(waiting) > 0:
-            task = waiting[0]
-        else:
-            task = ready[0]
-
-        if hasEnoughResources(task, resources):
-            while(not task.get_isAssigned()):
-                for core in cpu_cores:
-                    if core.get_state() == 'idle':
-                        th = Thread(target=core.process_task, args=(task, resources, cpu_cores))
-                        th.start()
-                        threads.append(th)
-                        task.set_isAssigned(True)
-                        if task in ready:
-                            ready.pop(0)
-                        else:
-                            waiting.pop(0)
-                        break
-        else:
-            if task in ready:
-                ready.pop(0)
-            else:
-                waiting.pop(0)
-            waiting.append(task)
-
-
-    join_threads(threads)
-
-    print_cpu_cores_consumed_time(cpu_cores)
-    exit(0)
-
-def SJF():
-    threads = []
-    global ready
-    ready = sorted(ready, key=lambda item: item.duration)
-    while len(ready) > 0 or len(waiting) > 0:
-
-        if len(waiting) > 0:
-            task = waiting[0]
-        else:
-            task = ready[0]
-
-        if hasEnoughResources(task, resources):
-            while(not task.get_isAssigned()):
-                for core in cpu_cores:
-                    if core.get_state() == 'idle':
-                        th = Thread(target=core.process_task, args=(task, resources, cpu_cores))
-                        th.start()
-                        threads.append(th)
-                        task.set_isAssigned(True)
-                        if task in ready:
-                            ready.pop(0)
-                        else:
-                            waiting.pop(0)
-                        break
-        else:
-            if task in ready:
-                ready.pop(0)
-            else:
-                waiting.pop(0)
-            waiting.append(task)
-
-
-    join_threads(threads)
-
-    print_cpu_cores_consumed_time(cpu_cores)
-    exit(0)
-
-
-
-
-def RoundRobin(time_quantum):
-    threads = []
-    tasks = ready.copy()
-
-    while get_done_tasks_count(tasks) < tasks_count:
-        isDone = True
-        if len(waiting) > 0:
-            task = waiting[0]
-            isDone = False
-        elif len(ready) > 0:
-            task = ready[0]
-            isDone = False
-
-        if not isDone:
-            if hasEnoughResources(task, resources):
-                while(not task.get_isAssigned()):
-                    for core in cpu_cores:
-                        if core.get_state() == 'idle':
-                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores, time_quantum, ready))
-                            task.set_isAssigned(True)
-                            if task in ready:
-                                ready.pop(0)
-                            else:
-                                waiting.pop(0)
-                            th.start()
-                            threads.append(th)
-                            break
-            else:
-                if task in ready:
-                    ready.pop(0)
-                else:
-                    waiting.pop(0)
-                waiting.append(task)
-
-    join_threads(threads)
-
-    print_cpu_cores_consumed_time(cpu_cores)
-    exit(0)
-
-
-
-
-def multilevel_feedback_queue(queues_number, queues_time_quantum):
-    queues = []
-    for i in range(queues_number):
-        queues.append([])
-    queues[0] = ready
-    queue_index = 0
-    threads = []
-    tasks = ready.copy()
-    counter = 0
-    while get_done_tasks_count(tasks) < tasks_count:
-        isDone = True
-        if len(waiting) > 0:
-            task, queue_index = waiting[0]
-            isDone = False
-        else:
-            for i in range(queues_number, 0, -1):
-                if counter % (queues_number * i) == 0 and len(queues[i-1]) > 0:
-                    task = queues[i-1][0]
-                    queue_index = i-1
-                    isDone = False
-                    break
-        counter += 1
-        if not isDone:
-            if hasEnoughResources(task, resources):
-                while(not task.get_isAssigned()):
-                    for core in cpu_cores:
-                        if core.get_state() == 'idle':
-                            next_level_queue_indx = min(queue_index+1, queues_number-1)
-                            next_state = 'queue ' + str(next_level_queue_indx)
-                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores, \
-                                queues_time_quantum[queue_index], queues[next_level_queue_indx], next_state))
-                            task.set_isAssigned(True)
-
-                            isWaiting = True
-                            for i in range(queues_number):
-                                if task in queues[i]:
-                                    queues[i].pop(0)
-                                    isWaiting = False
-                            if isWaiting:
-                                waiting.pop(0)
-                            th.start()
-                            threads.append(th)
-                            break
-            else:
-                isWaiting = True
-                for i in range(queues_number):
-                    if task in queues[i]:
-                        queues[i].pop(0)
-                        isWaiting = False
-                if isWaiting:
-                    waiting.pop(0)
-
-                waiting.append((task, queue_index))
-
-
-    join_threads(threads)
-
-    print_cpu_cores_consumed_time(cpu_cores)
-
-
-
+# simulates "Aging" procedure to prevent
+# starvation for tasks that has lower prior
+# campared to others. after each 15 and 20
+# time-units tasks are popped from queue-2
+# and queue-1 respectively and the are pushed
+# to a higher prior queue
 def aging(queues):
     while len(queues[1])+len(queues[2]) > 0:
-        with system_total_time_mutex:
-            if (system_total_time+1) % 15 == 0:
-                with task_mutex:
+        with globals.system_total_time_mutex:
+            if (globals.system_total_time+1) % 15 == 0:
+                with globals.task_mutex:
                     while len(queues[2]) > 0:
                         task = queues[2].pop(0)
                         print('\n'+colored('Task ' + task.name + ' has been moved from queue_2 to queue_1!', 'yellow'))
                         task.set_priority(task.get_priority()-1)
                         queues[1].append(task)
-        with system_total_time_mutex:
-            if (system_total_time+1) % 20 == 0:
-                with task_mutex:
+        with globals.system_total_time_mutex:
+            if (globals.system_total_time+1) % 20 == 0:
+                with globals.task_mutex:
                     while len(queues[1]) > 0:
                         task = queues[1].pop(0)
                         print('\n'+colored('Task ' + task.name + ' has been moved from queue_1 to queue_0!', 'yellow'))
@@ -216,6 +40,8 @@ def aging(queues):
                         queues[0].append(task)
 
 
+# it devides tasks into different queues
+# based on their type/priority
 def seprate_tasks_by_priority(tasks):
     queues = []
     for i in range(3):
@@ -228,20 +54,211 @@ def seprate_tasks_by_priority(tasks):
     return queues
 
 
-def multilevel_queue(): # TODO: Add aging to prevent starvation
-    queues = seprate_tasks_by_priority(ready)
+# First Come First Service algorithm,
+# it schedules the tasks based on their
+# initial input order
+def FCFS(tasks_count):
+    threads = []
+    while len(globals.ready) > 0 or len(globals.waiting) > 0:
+
+        if len(globals.waiting) > 0:
+            task = globals.waiting[0]
+        else:
+            task = globals.ready[0]
+
+        if hasEnoughResources(task, globals.resources):
+            while(not task.get_isAssigned()):
+                for core in globals.cpu_cores:
+                    if core.get_state() == 'idle':
+                        th = Thread(target=core.process_task, args=(task, globals.resources, globals.cpu_cores))
+                        th.start()
+                        threads.append(th)
+                        task.set_isAssigned(True)
+                        if task in globals.ready:
+                            globals.ready.pop(0)
+                        else:
+                            globals.waiting.pop(0)
+                        break
+        else:
+            if task in globals.ready:
+                globals.ready.pop(0)
+            else:
+                globals.waiting.pop(0)
+            globals.waiting.append(task)
+
+    globals.join_threads(threads)
+    globals.print_cpu_cores_consumed_time(globals.cpu_cores)
+    exit(0)
+
+
+# Shortest Job First,
+# it schedules the tasks based on their
+# CPU burst-time. in this algorithm tasks
+# are sorted ascending
+def SJF(tasks_count):
+    threads = []
+    globals.ready = sorted(globals.ready, key=lambda item: item.duration)
+    while len(globals.ready) > 0 or len(globals.waiting) > 0:
+
+        if len(globals.waiting) > 0:
+            task = globals.waiting[0]
+        else:
+            task = globals.ready[0]
+
+        if hasEnoughResources(task, globals.resources):
+            while(not task.get_isAssigned()):
+                for core in globals.cpu_cores:
+                    if core.get_state() == 'idle':
+                        th = Thread(target=core.process_task, args=(task, globals.resources, globals.cpu_cores))
+                        th.start()
+                        threads.append(th)
+                        task.set_isAssigned(True)
+                        if task in globals.ready:
+                            globals.ready.pop(0)
+                        else:
+                            globals.waiting.pop(0)
+                        break
+        else:
+            if task in globals.ready:
+                globals.ready.pop(0)
+            else:
+                globals.waiting.pop(0)
+            globals.waiting.append(task)
+
+    globals.join_threads(threads)
+    globals.print_cpu_cores_consumed_time(globals.cpu_cores)
+    exit(0)
+
+
+# Round Robin,
+# it assigns time-quantum to each process
+# then if the process isn't done yet, it will
+# be pushed to a queue and wait for its turn
+# to get another time slice (time-quantum)
+def RoundRobin(tasks_count, time_quantum):
+    threads = []
+    tasks = globals.ready.copy()
+    while globals.get_done_tasks_count(tasks) < tasks_count:
+        isDone = True
+        if len(globals.waiting) > 0:
+            task = globals.waiting[0]
+            isDone = False
+        elif len(globals.ready) > 0:
+            task = globals.ready[0]
+            isDone = False
+
+        if not isDone:
+            if hasEnoughResources(task, globals.resources):
+                while(not task.get_isAssigned()):
+                    for core in globals.cpu_cores:
+                        if core.get_state() == 'idle':
+                            th = Thread(target=core.process_task, args=(task, globals.resources, globals.cpu_cores, time_quantum, globals.ready))
+                            task.set_isAssigned(True)
+                            if task in globals.ready:
+                                globals.ready.pop(0)
+                            else:
+                                globals.waiting.pop(0)
+                            th.start()
+                            threads.append(th)
+                            break
+            else:
+                if task in globals.ready:
+                    globals.ready.pop(0)
+                else:
+                    globals.waiting.pop(0)
+                globals.waiting.append(task)
+
+    globals.join_threads(threads)
+    globals.print_cpu_cores_consumed_time(globals.cpu_cores)
+    exit(0)
+
+
+# Multilevel Feedback Queue,
+# this algorithm contains several queues
+# with different time-quantums. the priority
+# of each queue is different from another one.
+# if given time-quantum to the task is insufficient
+# then it will be pushed to next level queue that
+# has lower prior but a greater time-quantum. to
+# prioritize each queue, I used a simple "counter"
+# variable that each time is used to compute "%"
+def multilevel_feedback_queue(tasks_count, queues_number, queues_time_quantum):
+    queues = []
+    for i in range(queues_number):
+        queues.append([])
+    queues[0] = globals.ready
     queue_index = 0
     threads = []
-    tasks = ready.copy()
+    tasks = globals.ready.copy()
+    counter = 0
+    while globals.get_done_tasks_count(tasks) < tasks_count:
+        isDone = True
+        if len(globals.waiting) > 0:
+            task, queue_index = globals.waiting[0]
+            isDone = False
+        else:
+            for i in range(queues_number, 0, -1):
+                if counter % (queues_number * i) == 0 and len(queues[i-1]) > 0:
+                    task = queues[i-1][0]
+                    queue_index = i-1
+                    isDone = False
+                    break
+        counter += 1
+        if not isDone:
+            if hasEnoughResources(task, globals.resources):
+                while(not task.get_isAssigned()):
+                    for core in globals.cpu_cores:
+                        if core.get_state() == 'idle':
+                            next_level_queue_indx = min(queue_index+1, queues_number-1)
+                            next_state = 'queue ' + str(next_level_queue_indx)
+                            th = Thread(target=core.process_task, args=(task, globals.resources, globals.cpu_cores, \
+                                queues_time_quantum[queue_index], queues[next_level_queue_indx], next_state))
+                            task.set_isAssigned(True)
+
+                            isWaiting = True
+                            for i in range(queues_number):
+                                if task in queues[i]:
+                                    queues[i].pop(0)
+                                    isWaiting = False
+                            if isWaiting:
+                                globals.waiting.pop(0)
+                            th.start()
+                            threads.append(th)
+                            break
+            else:
+                isWaiting = True
+                for i in range(queues_number):
+                    if task in queues[i]:
+                        queues[i].pop(0)
+                        isWaiting = False
+                if isWaiting:
+                    globals.waiting.pop(0)
+
+                globals.waiting.append((task, queue_index))
+
+    globals.join_threads(threads)
+    globals.print_cpu_cores_consumed_time(globals.cpu_cores)
+    exit(0)
+
+
+# Multilevel Queue (based on tasks priorities),
+# as there are 3 types of task in this program
+# (X, Y, Z), there are 3 queues with different
+# priorities
+def multilevel_queue(tasks_count):
+    queues = seprate_tasks_by_priority(globals.ready)
+    queue_index = 0
+    threads = []
+    tasks = globals.ready.copy()
 
     Thread(target=aging, args=(queues,)).start()
 
-    while get_done_tasks_count(tasks) < tasks_count:
+    while globals.get_done_tasks_count(tasks) < tasks_count:
 
         isDone = True
         is_waiting = True
-        if len(waiting) > 0:
-            task = waiting[0]
+        if len(globals.waiting) > 0:
+            task = globals.waiting[0]
             isDone = False
         else:
             for i in range(3):
@@ -252,32 +269,32 @@ def multilevel_queue(): # TODO: Add aging to prevent starvation
                     break
 
         if not isDone:
-            if hasEnoughResources(task, resources):
+            if hasEnoughResources(task, globals.resources):
                 while(not task.get_isAssigned()):
-                    for core in cpu_cores:
+                    for core in globals.cpu_cores:
                         if core.get_state() == 'idle':
-                            th = Thread(target=core.process_task, args=(task, resources, cpu_cores))
+                            th = Thread(target=core.process_task, args=(task, globals.resources, globals.cpu_cores))
                             task.set_isAssigned(True)
-                            with task_mutex:
+                            with globals.task_mutex:
                                 if not is_waiting:
                                     for queue in queues:
                                         if task in queue:
                                             queue.pop(0)
                                             break
                                 else:
-                                    waiting.pop(0)
+                                    globals.waiting.pop(0)
                             th.start()
                             threads.append(th)
                             break
             else:
-                with task_mutex:
+                with globals.task_mutex:
                     if queue_index != -1:
                         queues[queue_index].pop(0)
                     else:
-                        waiting.pop(0)
+                        globals.waiting.pop(0)
 
-                    waiting.append(task)
+                    globals.waiting.append(task)
 
 
-    join_threads(threads)
-    print_cpu_cores_consumed_time(cpu_cores)
+    globals.join_threads(threads)
+    globals.print_cpu_cores_consumed_time(globals.cpu_cores)

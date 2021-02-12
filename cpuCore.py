@@ -1,8 +1,6 @@
 import time
 from termcolor import colored
-from parameters import cpu_core_mutex, task_mutex \
-                ,system_total_time, system_total_time_mutex \
-                ,increment_system_total_time
+import globals
 
 
 
@@ -14,19 +12,19 @@ class CPUCore:
         self.running_task = None
 
     def set_running_task(self, task):
-        cpu_core_mutex.acquire(blocking=False)
+        globals.cpu_core_mutex.acquire(blocking=False)
         self.running_task = task
-        cpu_core_mutex.release()
+        globals.cpu_core_mutex.release()
 
     def set_state(self, state):
-        cpu_core_mutex.acquire(blocking=False)
+        globals.cpu_core_mutex.acquire(blocking=False)
         self.state = state
-        cpu_core_mutex.release()
+        globals.cpu_core_mutex.release()
 
     def get_state(self):
-        cpu_core_mutex.acquire(blocking=False)
+        globals.cpu_core_mutex.acquire(blocking=False)
         state = self.state
-        cpu_core_mutex.release()
+        globals.cpu_core_mutex.release()
         return state
 
     def process_task(self, task, resources, cpu_cores, time_quantum=None, queue=None, state='ready'):
@@ -36,13 +34,15 @@ class CPUCore:
         task.set_state('running')
         task.allocate_resources(resources)
 
+        # indicates the selected scheduler
+        # algorithm is non-preemptive
         if time_quantum == None:
             for _ in range(task.duration):
                 time.sleep(1)
                 # print_system_status(cpu_cores, resources)
                 task.increment_cpu_time()
                 self.idle_time += 1
-                increment_system_total_time()
+                globals.increment_system_total_time()
 
             task.set_state('done')
             task.free_resources(resources)
@@ -54,7 +54,7 @@ class CPUCore:
                 # print_system_status(cpu_cores, resources)
                 task.increment_cpu_time()
                 self.idle_time += 1
-                increment_system_total_time()
+                globals.increment_system_total_time()
 
             task.free_resources(resources)
             if task.cpu_time == task.duration:
@@ -63,7 +63,7 @@ class CPUCore:
             else:
                 task.set_state(state)
                 task.set_isAssigned(False)
-                with task_mutex:
+                with globals.task_mutex:
                     queue.append(task)
 
         print()
