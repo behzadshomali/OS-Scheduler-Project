@@ -16,7 +16,7 @@ if __name__ == '__main__':
             colored('    FCFS: ', 'yellow', attrs=('bold', )) + colored('First Come First Service\n', 'yellow') + \
             colored('    SJF: ', 'yellow', attrs=('bold', )) + colored('Shortest Job First\n', 'yellow') + \
             colored('    RR: ', 'yellow', attrs=('bold', )) + colored('Round Robin\n', 'yellow') + \
-            colored('    MLF: ', 'yellow', attrs=('bold', )) + colored('Multi-level Feedback Queue\n', 'yellow') + \
+            colored('    MLFQ: ', 'yellow', attrs=('bold', )) + colored('Multi-level Feedback Queue\n', 'yellow') + \
             colored('    MLQ: ', 'yellow', attrs=('bold', )) + colored('Multi-level Queue (based on priorities)\n', 'yellow') + \
             colored('  > ', 'yellow')
 
@@ -67,7 +67,7 @@ if __name__ == '__main__':
         rr_thread.start()
         rr_thread.join()
 
-    elif algorithm.upper() == 'MLF':
+    elif algorithm.upper() == 'MLFQ':
         queues_num = int(input(colored('Please enter the number of the queues: ', 'yellow', attrs=('bold',))))
         time_quantums = list(map(int, input(colored('Respectively, enter time quantum associated with each queue: ', 'yellow', attrs=('bold',))).split(' ')))
         mlf_thread = Thread(target=multilevel_feedback_queue, args=(tasks_count, queues_num, time_quantums))

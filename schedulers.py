@@ -3,7 +3,6 @@ from threading import Thread
 import globals
 
 
-
 # check whether there are enough resources
 # for intended task or not
 def hasEnoughResources(task, resources):
