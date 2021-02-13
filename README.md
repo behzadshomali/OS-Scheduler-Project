@@ -35,8 +35,7 @@ python3 main.py
 ```
 2. Choose the desired scheduler algorithm by typing its abbreviation:
 `FCFS`, `SJF`, `RR`, `MLFQ`, `MLQ`
-</br>
-3. Specify the number of resources that are available in this system. You should enter the number of resources `A` , `B`, `C` respectively.
+3.Specify the number of resources that are available in this system. You should enter the number of resources `A` , `B`, `C` respectively.
 4. Enter the number of tasks that need to be processed
 5. Enter the information about tasks (line-by-line) in the following format: `<name> <type> <duration>`
 6. Enter the intended number of CPU-cores
