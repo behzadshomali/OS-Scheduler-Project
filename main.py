@@ -6,7 +6,8 @@ from termcolor import colored
 from task import Task
 from cpuCore import CPUCore
 import globals
-from schedulers import FCFS, SJF, RoundRobin, multilevel_feedback_queue, multilevel_queue
+from schedulers import FCFS, SJF, RoundRobin, \
+    multilevel_feedback_queue, multilevel_queue
 
 
 

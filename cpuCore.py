@@ -3,7 +3,6 @@ from termcolor import colored
 import globals
 
 
-
 class CPUCore:
     def __init__(self, name):
         self.name = name
@@ -67,7 +66,11 @@ class CPUCore:
                     queue.append(task)
 
         print()
-        print(colored('Task ' + task.name + ' current cputime: ', 'yellow')+ str(task.get_cpu_time()) \
-            + '\n' + colored('Task ' + task.name + ' current state: ' , 'yellow')+ task.get_state())
+        globals.task_mutex.acquire(blocking=False)
+        globals.resource_mutex.acquire(blocking=False)
+        print(colored('Task ' + task.name + ' current cputime: ', 'yellow')+ str(task.cpu_time) \
+            + '\n' + colored('Task ' + task.name + ' current state: ' , 'yellow')+ task.state)
+        globals.task_mutex.release()
+        globals.resource_mutex.release()
         self.set_state('idle')
         self.set_running_task(None)

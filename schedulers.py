@@ -28,7 +28,7 @@ def aging(queues):
                     while len(queues[2]) > 0:
                         task = queues[2].pop(0)
                         print('\n'+colored('Task ' + task.name + ' has been moved from queue_2 to queue_1!', 'yellow'))
-                        task.set_priority(task.get_priority()-1)
+                        task.set_priority(task.priority-1)
                         queues[1].append(task)
         with globals.system_total_time_mutex:
             if (globals.system_total_time+1) % 20 == 0:
@@ -36,7 +36,7 @@ def aging(queues):
                     while len(queues[1]) > 0:
                         task = queues[1].pop(0)
                         print('\n'+colored('Task ' + task.name + ' has been moved from queue_1 to queue_0!', 'yellow'))
-                        task.set_priority(task.get_priority()-1)
+                        task.set_priority(task.priority-1)
                         queues[0].append(task)
 
 
@@ -48,7 +48,7 @@ def seprate_tasks_by_priority(tasks):
         queues.append([])
 
     for task in tasks:
-        priority = task.get_priority()
+        priority = task.priority
         queues[priority-1].append(task)
 
     return queues

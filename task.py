@@ -27,22 +27,10 @@ class Task:
             self.priority = priority
         globals.task_mutex.release()
 
-    def get_priority(self):
-        globals.task_mutex.acquire(blocking=False)
-        priority = self.priority
-        globals.task_mutex.release()
-        return priority
-
     def set_state(self, state):
         globals.task_mutex.acquire(blocking=False)
         self.state = state
         globals.task_mutex.release()
-
-    def get_state(self):
-        globals.task_mutex.acquire(blocking=False)
-        state = self.state
-        globals.task_mutex.release()
-        return state
 
     def set_isAssigned(self, isAssigned):
         globals.task_mutex.acquire(blocking=False)
@@ -68,17 +56,10 @@ class Task:
         elif self.type == 'Z':
             return ('A', 'C')
 
-
     def increment_cpu_time(self):
         globals.resource_mutex.acquire(blocking=False)
         self.cpu_time += 1
         globals.resource_mutex.release()
-
-    def get_cpu_time(self):
-        globals.resource_mutex.acquire(blocking=False)
-        cpu_time = self.cpu_time
-        globals.resource_mutex.release()
-        return cpu_time
 
     def allocate_resources(self, resources):
         globals.resource_mutex.acquire(blocking=False)
